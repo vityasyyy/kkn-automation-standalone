@@ -4,6 +4,17 @@ A simple program that can automatically (soon™) submits your KKN-PPM UGM atten
 
 ---
 
+## Motivation
+
+This program exist for a couple of reasons:
+
+1. SIMASTER web UI is ass and the UX is even worse
+2. The API handling is as consistent as my will to live (which is never /s)
+3. I mean who doesn't like automation when the system is bad and time-consuming
+4. I have free will
+
+---
+
 ## Getting Started
 
 There are currently only one way to run this, for planned feature see [TODO](#todo)
