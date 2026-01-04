@@ -64,6 +64,9 @@ QR_CODE_VALUE=the_qr_value
 KKN_LOCATION_LATITUDE=-7.9547226
 KKN_LOCATION_LONGITUDE=110.2788225
 KKN_LOCATION_RADIUS_METERS=50
+
+# A comma separated value for multiple usernames
+USERNAMES=a,b,c,d
 ```
 
 5. Run `main.py`
@@ -71,10 +74,11 @@ KKN_LOCATION_RADIUS_METERS=50
 ## TODO
 
 - Automation (Docker/Termux/GitHub actions?)
-- Probably use Textual for a nicer UI
+- Use [rich](https://github.com/textualize/rich) for a nicer UI
 - More features related to KKN
-  - Add entry to logbook
-  - Automate attendance of those entry
-  - Possibly handle case when we want to backdate (set the date to the current date, post attendance, then revert the date back)
+  - [x] Program caching to minimize request to SIMASTER
+  - [ ] Add entry to logbook
+  - [ ] Automate attendance of those entry
+  - [ ] Handle case when we want to backdate (set the date to the current date, post attendance, then revert the date back)
 
 ---
