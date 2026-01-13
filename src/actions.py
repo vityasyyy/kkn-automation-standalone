@@ -6,10 +6,36 @@ import httpx
 
 from ui.prompt import get_entry_details_from_user, get_sub_entry_details_from_user, parse_selection
 from ui.tables import print_assisted_program, print_program_details, print_program_title, print_unattended_program
-from ui.tui import console
-from utils.common import async_input, filter_unattended_program, generate_random_points, load_background
+from ui.tui import console, log
+from utils.common import async_input, generate_random_points, load_background
 from utils.kkn import KKN
 from utils.simaster import Simaster
+
+
+def _filter_unattended_program(data: dict | None) -> list[dict]:
+    if not data:
+        log.error("No assisted program found")
+        return []
+
+    filtered_program = []
+
+    for key, value in data.items():
+        if isinstance(value, dict):
+            entries = value.get("entries", [])
+            base_info = {"title": value.get("title"), "type": "main", "id": key}
+        else:
+            entries = value
+            base_info = {"pic": key, "type": "bantu"}
+
+        for entry in entries:
+            for sub in entry.get("sub_entries", []):
+                if not (url := sub.get("attendance_link")):
+                    continue
+
+                info = {**base_info, "entry": entry.get("title"), "sub_entry": sub.get("title"), "url": url}
+                filtered_program.append(info)
+
+    return filtered_program
 
 
 async def show_all_program(kkn: KKN):
@@ -71,8 +97,8 @@ async def handle_unattended_entries(kkn: KKN):
 
     await load_background("[blue]Background fetch in progress...[/]", kkn.loader)
 
-    unattended_main = filter_unattended_program(kkn.main_program)
-    unattended_assisted = filter_unattended_program(kkn.assisted_program)
+    unattended_main = _filter_unattended_program(kkn.main_program)
+    unattended_assisted = _filter_unattended_program(kkn.assisted_program)
     unattended = [*unattended_main, *unattended_assisted]
 
     if not unattended:

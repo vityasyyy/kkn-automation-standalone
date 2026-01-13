@@ -6,7 +6,7 @@ from typing import Callable
 
 from rich.prompt import Prompt
 
-from ui.tui import console, log
+from ui.tui import console
 
 
 async def async_input(prompt: str = "", func: type | Callable = str, **kwargs):
@@ -40,29 +40,3 @@ def generate_random_points(lat: float, long: float, radius_m: int) -> tuple[str,
     new_long = f"{new_long:.6f}"
 
     return (new_lat, new_long)
-
-
-def filter_unattended_program(data: dict | None) -> list[dict]:
-    if not data:
-        log.error("No assisted program found")
-        return []
-
-    filtered_program = []
-
-    for key, value in data.items():
-        if isinstance(value, dict):
-            entries = value.get("entries", [])
-            base_info = {"title": value.get("title"), "type": "main", "id": key}
-        else:
-            entries = value
-            base_info = {"pic": key, "type": "bantu"}
-
-        for entry in entries:
-            for sub in entry.get("sub_entries", []):
-                if not (url := sub.get("attendance_link")):
-                    continue
-
-                info = {**base_info, "entry": entry.get("title"), "sub_entry": sub.get("title"), "url": url}
-                filtered_program.append(info)
-
-    return filtered_program
