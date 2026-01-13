@@ -11,8 +11,29 @@ from rich.table import Table
 import utils.generative as gen
 from datatypes import LogEntryPayload, RPPData
 from ui.tables import print_program_entries, print_program_sub_entries
-from ui.tui import console
+from ui.tui import console, log
 from utils.common import generate_random_points
+
+
+def parse_selection(input_str: str) -> list[int]:
+    selected = set()
+    tokens = input_str.split()
+
+    for token in tokens:
+        try:
+            if "-" in token:
+                start_str, end_str = token.split("-", 1)
+                start, end = int(start_str), int(end_str)
+
+                lower, upper = min(start, end), max(start, end)
+                selected.update(range(lower, upper + 1))
+            else:
+                selected.add(int(token))
+        except ValueError:
+            log.warning(f"Token: '{token}' is not a number or a hyphen")
+            continue
+
+    return sorted(list(selected))
 
 
 def get_entry_details_from_user(data: RPPData) -> LogEntryPayload | None:
