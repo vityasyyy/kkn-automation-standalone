@@ -1,5 +1,24 @@
+import asyncio
 import math
 import random
+from asyncio import Task
+
+from rich.prompt import Prompt
+
+from datatypes import AssistedProgram, RPPData
+from ui.tui import console, log
+
+
+async def async_input(prompt: str = "", caster: type = str, **kwargs):
+    return caster(await asyncio.to_thread(Prompt.ask, prompt, **kwargs))  # ty: ignore
+
+
+async def load_background(status: str, job: Task):
+    if job.done():
+        return
+
+    with console.status(status, spinner="dots"):
+        await job
 
 
 def generate_random_points(lat: float, long: float, radius_m: int) -> tuple[str, str]:
@@ -21,3 +40,35 @@ def generate_random_points(lat: float, long: float, radius_m: int) -> tuple[str,
     new_long = f"{new_long:.6f}"
 
     return (new_lat, new_long)
+
+
+def filter_unattended_program(data: dict | None) -> list[dict]:
+    if not data:
+        log.error("No assisted program found")
+        return []
+
+    filtered_program = []
+
+    for key, value in data.items():
+        if isinstance(value, dict):
+            entries = value.get("entries", [])
+            base_info = {"title": value.get("title")}
+        else:
+            entries = value
+            base_info = {"pic": key}
+
+        for entry in entries:
+            for sub in entry.get("sub_entries", []):
+                if not (url := sub.get("attendance_link")):
+                    continue
+
+                # fmt: off
+                filtered_program.append({
+                    **base_info,
+                    "entry": entry.get("title"),
+                    "sub_entry": sub.get("title"),
+                    "url": url,
+                })
+                # fmt: on
+
+    return filtered_program
