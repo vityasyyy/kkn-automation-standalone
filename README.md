@@ -48,19 +48,17 @@ cd kkn-automation
   uv sync
   ```
 
-3. Create the Environment File
+3. Create the Environment File \
+   Create a file named `.env` in the project's root directory.
 
-Create a file named `.env` in the project's root directory.
-
-4. Configure your settings
-
-Copy the template below into your `.env` or see [example](./.env.example).
+4. Configure your settings \
+   Copy the template below into your `.env` or see [example](./.env.example).
 
 ```sh
-# --- QR Code Location Value (Required) ---
+# QR Code Location Value (Required)
 QR_CODE_VALUE=the_qr_value
 
-# --- KKN Location Settings (Required) ---
+# KKN Location Settings (Required)
 KKN_LOCATION_LATITUDE=-7.9547226
 KKN_LOCATION_LONGITUDE=110.2788225
 KKN_LOCATION_RADIUS_METERS=50
@@ -78,11 +76,21 @@ GEMINI_API_KEY=
 
 5. Run `main.py`
 
+```text
+usage: main.py [-s] [-c] [-h]
+
+options:
+  -s, --submit  (bool, default=False) Submit your attendance
+  -c, --check   (bool, default=False) Check whether if you have logged in or not
+  -h, --help    show this help message and exit
+
+```
+
 ## TODO
 
-- Automation (Docker/Termux/GitHub actions?)
-- Use [rich](https://github.com/textualize/rich) for a nicer UI
-- More features related to KKN
+- [ ] Automation (Docker/Termux/GitHub actions?)
+- [x] Use [rich](https://github.com/textualize/rich) for a nicer UI
+- [ ] More features related to KKN
   - [x] Program caching to minimize request to SIMASTER
   - [x] Add entry to logbook
   - [x] ~Automate~ Handle attendance of those entry
