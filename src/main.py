@@ -8,7 +8,7 @@ from tap import Tap
 import actions
 from ui.tui import console, print_choice, print_title
 from utils.attendance import handle_check_status, handle_checkin
-from utils.common import async_input, load_background
+from utils.common import async_input
 from utils.kkn import KKN
 from utils.simaster import Simaster
 
@@ -52,11 +52,12 @@ async def main_async(username: str, password: str):
         elif choice == "4":
             await actions.add_new_sub_entry(kkn_manager)
         elif choice == "5":
-            # await actions.handle_unattended_entries(kkn_manager)
+            await actions.handle_unattended_entries(kkn_manager)
             pass
         elif choice == "6":
-            await load_background("[blue]Background fetch in progress...[/]", kkn_manager.loader)
+            # await load_background("[blue]Background fetch in progress...[/]", kkn_manager.loader)
             # TODO: handle report generation
+            console.print("[cyan background] TODO [/] Report generation")
             pass
         elif choice == "7":
             if result := await actions.change_account():
