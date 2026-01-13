@@ -5,7 +5,6 @@ from asyncio import Task
 
 from rich.prompt import Prompt
 
-from datatypes import AssistedProgram, RPPData
 from ui.tui import console, log
 
 

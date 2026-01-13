@@ -233,7 +233,7 @@ class OAuthClient:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def get_access_token(self, authorization_code: str) -> dict[str, bool | str | None]:
+    def get_access_token(self, authorization_code: str) -> OAuthResponse:
         url = f"{OAUTH_BASE_URL}/oauth/token"
 
         data: RequestData = {

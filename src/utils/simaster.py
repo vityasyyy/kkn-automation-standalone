@@ -24,7 +24,7 @@ class Simaster:
         if not (cookies := self.cache.get(key)):
             return None
 
-        client = httpx.AsyncClient(cookies=cookies, timeout=10.0)
+        client = httpx.AsyncClient(cookies=cookies, timeout=5.0)
 
         try:
             resp = await client.get(HOME_URL, follow_redirects=True)
