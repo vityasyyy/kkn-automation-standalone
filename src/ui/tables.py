@@ -84,6 +84,24 @@ def _print_simple_list(data: list):
     console.print(table)
 
 
+def _generate_unattended_table(data: list, counter: int, is_assisted: bool = False):
+    if not data:
+        return
+
+    table = Table(box=box.SIMPLE, show_edge=False, expand=True)
+    table.add_column("No", justify="center", style="#fab387", width=2)
+    table.add_column(Align.center("PIC" if is_assisted else "Program"), ratio=2)
+    table.add_column(Align.center("Activity Details"), ratio=3)
+
+    for i, item in enumerate(data, 1):
+        col_name = item.get("pic", "N/A") if is_assisted else item.get("title", "N/A")
+        details = f"Entry: {item.get('entry', 'N/A')}\n[cyan]└──[/] {item.get('sub_entry')}"
+        table.add_row(str(counter), col_name, details)
+        counter += 1
+
+    return table, counter
+
+
 def print_program_title(data: dict[str, RPPData] | None):
     if not data:
         log.warning("No data found")
@@ -96,6 +114,29 @@ def print_program_title(data: dict[str, RPPData] | None):
 
     for i, (k, v) in enumerate(data.items(), 1):
         table.add_row(str(i), v["title"])
+
+    console.print(table)
+
+
+def print_unattended_program(data: list):
+    if not data:
+        return
+
+    main_progs = [x for x in data if x.get("type") == "main"]
+    assisted_progs = [x for x in data if x.get("type") == "bantu"]
+
+    table = Table(box=box.ROUNDED, title="[bold red]Unattended Activities", expand=True)
+
+    counter = 1
+    if main_progs and (res := _generate_unattended_table(main_progs, counter)):
+        table.add_column("Program Utama", justify="center")
+        inner_table, counter = res
+        table.add_row(inner_table)
+
+    if assisted_progs and (res := _generate_unattended_table(assisted_progs, counter)):
+        table.add_column("Program Bantu", justify="center")
+        inner_table, counter = res
+        table.add_row(inner_table)
 
     console.print(table)
 
