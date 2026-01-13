@@ -1,6 +1,12 @@
 # KKN Attendance Automation
 
-A simple program that can automatically (soon™) submits your KKN-PPM UGM attendance using the new VNEXT Checkpoint API
+A simple program that manage your KKN-PPM UGM administrative works, which includes:
+
+- Entering logbook entries and sub-entries
+- Post attendance for logbook entries
+- Daily attendance using the new VNEXT Checkpoint API
+
+![app](./assets/app.jpeg)
 
 ---
 
@@ -86,6 +92,10 @@ options:
 
 ```
 
+## Limitations
+
+- It can only add logbook entries and sub-entries, if you wish to edit them, you have to edit them through the web.
+
 ## TODO
 
 - [ ] Automation (Docker/Termux/GitHub actions?)
@@ -94,6 +104,7 @@ options:
   - [x] Program caching to minimize request to SIMASTER
   - [x] Add entry to logbook
   - [x] ~Automate~ Handle attendance of those entry
+  - [ ] Report generation (HTML, PDF, ICS)
   - [ ] ~Handle case when we want to backdate (set the date to the current date, post attendance, then revert the date back)~
 
 ---
