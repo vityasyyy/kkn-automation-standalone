@@ -1,7 +1,10 @@
 import hashlib
+from contextlib import nullcontext
 
 import httpx
 from cachelib import SimpleCache
+
+from ui.tui import console
 
 BASE_URL = "https://simaster.ugm.ac.id"
 HOME_URL = f"{BASE_URL}/beranda"
@@ -38,35 +41,50 @@ class Simaster:
         return None
 
     async def login(
-        self, username: str | None = None, password: str | None = None, reuse_session: bool = True
+        self,
+        username: str | None = None,
+        password: str | None = None,
+        reuse_session: bool = True,
+        verbose: bool = False,
     ) -> httpx.AsyncClient | None:
         self.username = username or self.username
         self.password = password or self.password
 
         key = self._get_cache_key(self.username, self.password)
-        if reuse_session:
-            if client := await self._check_cache(key):
-                return client
+        if reuse_session and (client := await self._check_cache(key)):
+            return client
 
-        print("Attempting a new login...")
-        client = httpx.AsyncClient(timeout=10.0)
+        client = httpx.AsyncClient(timeout=5.0)
         login_data = {"aId": "", "username": self.username, "password": self.password}
 
         try:
-            resp = await client.post(LOGIN_URL, data=login_data, follow_redirects=True)
-            resp.raise_for_status()
+            status_context = (
+                console.status(f"[bold green]Logging in as {self.username}...", spinner="dots")
+                if verbose
+                else nullcontext()
+            )
 
-            resp_json = resp.json()
+            with status_context:
+                resp = await client.post(LOGIN_URL, data=login_data, follow_redirects=True)
+                resp.raise_for_status()
+                resp_json = resp.json()
+
             if resp_json.get("isLogin") == 1:
-                print(f"Successfully logged in as {resp_json.get('namaLengkap')}")
+                if verbose:
+                    console.print(f"[green]Succesfully logged in as {resp_json.get('namaLengkap')}[/]")
+
                 self.cache.set(key, dict(client.cookies), timeout=60 * 60 * 24 * 2)
                 return client
             else:
-                print("Login failed, Please check your username and password.")
+                if verbose:
+                    console.print("[bold red]Login failed, Please check your username and password.[/]")
+
                 await client.aclose()
                 return None
 
         except Exception as e:
-            print(f"An error occured during login: {e}")
+            if verbose:
+                console.print(f"[bold red]An error occured during login: {e}[/]")
+
             await client.aclose()
             return None
