@@ -2,14 +2,15 @@ import asyncio
 import math
 import random
 from asyncio import Task
+from typing import Callable
 
 from rich.prompt import Prompt
 
 from ui.tui import console, log
 
 
-async def async_input(prompt: str = "", caster: type = str, **kwargs):
-    return caster(await asyncio.to_thread(Prompt.ask, prompt, **kwargs))  # ty: ignore
+async def async_input(prompt: str = "", func: type | Callable = str, **kwargs):
+    return func(await asyncio.to_thread(Prompt.ask, prompt, **kwargs))  # ty: ignore
 
 
 async def load_background(status: str, job: Task):
@@ -51,23 +52,17 @@ def filter_unattended_program(data: dict | None) -> list[dict]:
     for key, value in data.items():
         if isinstance(value, dict):
             entries = value.get("entries", [])
-            base_info = {"title": value.get("title")}
+            base_info = {"title": value.get("title"), "type": "main", "id": key}
         else:
             entries = value
-            base_info = {"pic": key}
+            base_info = {"pic": key, "type": "bantu"}
 
         for entry in entries:
             for sub in entry.get("sub_entries", []):
                 if not (url := sub.get("attendance_link")):
                     continue
 
-                # fmt: off
-                filtered_program.append({
-                    **base_info,
-                    "entry": entry.get("title"),
-                    "sub_entry": sub.get("title"),
-                    "url": url,
-                })
-                # fmt: on
+                info = {**base_info, "entry": entry.get("title"), "sub_entry": sub.get("title"), "url": url}
+                filtered_program.append(info)
 
     return filtered_program
