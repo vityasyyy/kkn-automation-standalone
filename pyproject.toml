@@ -9,6 +9,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "google-genai>=1.56.0",
     "httpx>=0.28.1",
+    "ics>=0.7.2",
     "lxml>=6.0.2",
     "prompt-toolkit>=3.0.52",
     "pyjwt>=2.10.1",
@@ -16,4 +17,5 @@ dependencies = [
     "rich>=14.2.0",
     "selectolax>=0.4.6",
     "typed-argument-parser>=1.11.0",
+    "weasyprint>=68.0",
 ]
