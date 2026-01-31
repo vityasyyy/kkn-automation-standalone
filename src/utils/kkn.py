@@ -153,7 +153,7 @@ class KKN:
     if temp_pool:
       await asyncio.gather(*[c.aclose() for c in temp_pool])
 
-    for p_id, entries in zip(self.main_program.keys(), results):
+    for p_id, entries in zip(program_list, results):
       self.main_program[p_id]["entries"] = entries
 
   # async def update_logbook_entries(self, p_id: str):
