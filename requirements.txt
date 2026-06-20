@@ -35,14 +35,31 @@ dotenv==0.9.9
     # via vnext-checkpoint (pyproject.toml)
 fonttools==4.63.0
     # via weasyprint
+google-api-core==2.30.3
+    # via google-api-python-client
+google-api-python-client==2.197.0
+    # via vnext-checkpoint (pyproject.toml)
 google-auth==2.55.0
-    # via google-genai
+    # via
+    #   vnext-checkpoint (pyproject.toml)
+    #   google-api-core
+    #   google-api-python-client
+    #   google-auth-httplib2
+    #   google-genai
+google-auth-httplib2==0.4.0
+    # via google-api-python-client
 google-genai==2.9.0
     # via vnext-checkpoint (pyproject.toml)
+googleapis-common-protos==1.75.0
+    # via google-api-core
 h11==0.16.0
     # via httpcore
 httpcore==1.0.9
     # via httpx
+httplib2==0.31.2
+    # via
+    #   google-api-python-client
+    #   google-auth-httplib2
 httpx==0.28.1
     # via
     #   vnext-checkpoint (pyproject.toml)
@@ -64,6 +81,13 @@ pillow==12.2.0
     # via weasyprint
 prompt-toolkit==3.0.52
     # via vnext-checkpoint (pyproject.toml)
+proto-plus==1.28.0
+    # via google-api-core
+protobuf==7.35.1
+    # via
+    #   google-api-core
+    #   googleapis-common-protos
+    #   proto-plus
 pyasn1==0.6.3
     # via pyasn1-modules
 pyasn1-modules==0.4.2
@@ -80,6 +104,8 @@ pygments==2.20.0
     # via rich
 pyjwt==2.10.1
     # via vnext-checkpoint (pyproject.toml)
+pyparsing==3.3.2
+    # via httplib2
 pyphen==0.17.2
     # via weasyprint
 python-dateutil==2.9.0.post0
@@ -88,9 +114,12 @@ python-dateutil==2.9.0.post0
     #   ics
 python-dotenv==1.2.1
     # via dotenv
+pyyaml==6.0.3
+    # via vnext-checkpoint (pyproject.toml)
 requests==2.32.5
     # via
     #   vnext-checkpoint (pyproject.toml)
+    #   google-api-core
     #   google-auth
     #   google-genai
 rich==15.0.0
@@ -126,6 +155,8 @@ typing-inspection==0.4.2
     # via pydantic
 tzdata==2026.2
     # via arrow
+uritemplate==4.2.0
+    # via google-api-python-client
 urllib3==2.6.2
     # via requests
 wcwidth==0.8.1

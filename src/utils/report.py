@@ -96,7 +96,7 @@ def generate_ics(records: list[dict], out_path: Path) -> bool:
     return False
 
 
-def _build_html(records: list[dict], narrative: str | None) -> str:
+def _build_html(records: list[dict], narrative: str | None, title_prefix: str = "") -> str:
   rows_html = []
   for rec in records:
     badge = "✓" if rec["attended"] else "—"
@@ -116,6 +116,7 @@ def _build_html(records: list[dict], narrative: str | None) -> str:
   total = len(records)
   attended = sum(1 for r in records if r["attended"])
   generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+  report_title = f"Laporan Kehadiran KKN — {title_prefix}" if title_prefix else "Laporan Kehadiran KKN"
 
   narrative_section = ""
   if narrative:
@@ -143,7 +144,7 @@ def _build_html(records: list[dict], narrative: str | None) -> str:
 </style>
 </head>
 <body>
-  <h1>Laporan Kehadiran KKN</h1>
+  <h1>{report_title}</h1>
   <p>Dibuat: {generated_at}</p>
   <div class="summary">
     <div class="card"><div class="num">{total}</div>Total Sub-entri</div>
@@ -166,10 +167,10 @@ def _build_html(records: list[dict], narrative: str | None) -> str:
 </html>"""
 
 
-def generate_html(records: list[dict], narrative: str | None, out_path: Path) -> bool:
+def generate_html(records: list[dict], narrative: str | None, out_path: Path, title_prefix: str = "") -> bool:
   try:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    html = _build_html(records, narrative)
+    html = _build_html(records, narrative, title_prefix=title_prefix)
     with open(out_path, "w", encoding="utf-8") as f:
       f.write(html)
     log.info("HTML report written to %s", out_path)
@@ -179,10 +180,10 @@ def generate_html(records: list[dict], narrative: str | None, out_path: Path) ->
     return False
 
 
-def generate_pdf(records: list[dict], narrative: str | None, out_path: Path) -> bool:
+def generate_pdf(records: list[dict], narrative: str | None, out_path: Path, title_prefix: str = "") -> bool:
   try:
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    html = _build_html(records, narrative)
+    html = _build_html(records, narrative, title_prefix=title_prefix)
     WeasyHTML(string=html).write_pdf(str(out_path))
     log.info("PDF report written to %s", out_path)
     return True
@@ -208,15 +209,17 @@ def _maybe_generate_narrative(records: list[dict]) -> str | None:
   return generate_content(prompt)
 
 
-def generate_reports(kkn: KKN) -> dict[str, Path]:
+def generate_reports(kkn: KKN, output_dir: Path | None = None, title_prefix: str = "") -> dict[str, Path]:
   """Generate ICS + HTML + PDF reports. Returns dict of format->path."""
   records = _collect_attendance_data(kkn.main_program, kkn.assisted_program)
   log.info("Collected %d attendance records", len(records))
 
+  out_dir = output_dir or REPORT_DIR
   timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-  ics_path = REPORT_DIR / f"kkn-attendance-{timestamp}.ics"
-  html_path = REPORT_DIR / f"kkn-report-{timestamp}.html"
-  pdf_path = REPORT_DIR / f"kkn-report-{timestamp}.pdf"
+  prefix = f"{title_prefix}-" if title_prefix else ""
+  ics_path = out_dir / f"{prefix}kkn-attendance-{timestamp}.ics"
+  html_path = out_dir / f"{prefix}kkn-report-{timestamp}.html"
+  pdf_path = out_dir / f"{prefix}kkn-report-{timestamp}.pdf"
 
   results = {}
 
@@ -228,9 +231,9 @@ def generate_reports(kkn: KKN) -> dict[str, Path]:
 
   if generate_ics(records, ics_path):
     results["ics"] = ics_path
-  if generate_html(records, narrative, html_path):
+  if generate_html(records, narrative, html_path, title_prefix=title_prefix):
     results["html"] = html_path
-  if generate_pdf(records, narrative, pdf_path):
+  if generate_pdf(records, narrative, pdf_path, title_prefix=title_prefix):
     results["pdf"] = pdf_path
 
   return results

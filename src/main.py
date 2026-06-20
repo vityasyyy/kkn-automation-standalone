@@ -24,12 +24,14 @@ class Parser(Tap):
   check: bool = False  # Check whether if you have logged in or not
   report: bool = False  # Generate attendance report
   headless: bool = False  # Run without interactive prompts (for cron/CI)
+  dry_run: bool = False  # Validate everything but skip the final check-in POST
+  verify: bool = False  # After submit, verify each user's active session
+  group_report: bool = False  # Generate per-user reports for all SIMASTER_CREDENTIALS
 
   def configure(self):
     self.add_argument("-s", "--submit")
     self.add_argument("-c", "--check")
     self.add_argument("-r", "--report")
-    self.add_argument("--headless")
 
 
 async def main_async(username: str, password: str):
@@ -114,15 +116,25 @@ def main() -> int:
 
   try:
     if args.submit:
-      ok = handle_attendance(username, password, headless=args.headless)
+      ok = handle_attendance(username, password, headless=args.headless, dry_run=args.dry_run, verify=args.verify)
       if args.report:
         _generate_report_headless(username, password)
+      if args.group_report:
+        _generate_group_report()
       return 0 if ok else 1
     elif args.check:
       ok = handle_check_status(username, password)
       return 0 if ok else 1
     elif args.report:
       ok = _generate_report_headless(username, password)
+      if args.group_report:
+        _generate_group_report()
+      return 0 if ok else 1
+    elif args.group_report:
+      ok = _generate_group_report()
+      return 0 if ok else 1
+    elif args.dry_run:
+      ok = handle_attendance(username, password, headless=True, dry_run=True, verify=args.verify)
       return 0 if ok else 1
     else:
       asyncio.run(main_async(username, password))
@@ -143,6 +155,16 @@ def _generate_report_headless(username: str, password: str) -> bool:
     return asyncio.run(generate_report_headless(username, password))
   except Exception as e:
     setup_logging().error("Report generation failed: %s", e, exc_info=True)
+    return False
+
+
+def _generate_group_report() -> bool:
+  try:
+    from utils.group_report import generate_group_reports
+
+    return asyncio.run(generate_group_reports())
+  except Exception as e:
+    setup_logging().error("Group report generation failed: %s", e, exc_info=True)
     return False
 
 

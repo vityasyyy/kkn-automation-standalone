@@ -1,6 +1,9 @@
+import json
 import os
 import random
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 import httpx
@@ -12,6 +15,7 @@ from rich.table import Table
 from datatypes import CheckInPayload, RequestHeader
 from ui.tui import console, print_log
 from utils.common import env_bool, env_float, env_int, generate_random_points, get_usernames
+from utils.locations import Location, build_payload_for_location, load_location_config, resolve_location
 from utils.logger import get_logger
 from utils.oauth import OAuthClient
 
@@ -21,6 +25,8 @@ CLIENT_ID = "e6abd4e380a5462e83873fe22ab8c219yVaU"
 CLIENT_SECRET = "THFnhmQ6jckSWWzV6m9Mj78CexLCKjd009f4h9gQaIo8fUUULOhWP7DD"
 REDIRECT_URI = "id.ac.ugm.student.vnext.simaster://oauth2"
 BASE_URL = "https://api.simaster.ugm.ac.id/vnext/v1/checkpoint"
+
+RESULT_FILE = Path(os.getenv("REPORT_DIR", "reports")) / "result.json"
 
 
 def check_in(username: str, data: CheckInPayload):
@@ -90,7 +96,60 @@ def _is_already_checked_in(username: str, access_token: str) -> bool:
     return False
 
 
-def _handle_attendance_env(data: CheckInPayload, func: Callable, headless: bool = False, idempotent: bool = True):
+def _write_result_json(results: list[dict]):
+  try:
+    RESULT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(RESULT_FILE, "w", encoding="utf-8") as f:
+      json.dump({"generated_at": datetime.now().isoformat(), "results": results}, f, indent=2, ensure_ascii=False)
+    log.info("result.json written to %s (%d users)", RESULT_FILE, len(results))
+  except Exception as e:
+    log.error("Failed to write result.json: %s", e)
+
+
+def _print_summary(results: list[dict]):
+  table = Table(box=box.ROUNDED, title="Attendance Run Summary")
+  table.add_column("User")
+  table.add_column("Location")
+  table.add_column("Status")
+  table.add_column("Detail")
+
+  for r in results:
+    status = r["status"]
+    if status == "checked_in":
+      icon = "[green]✓ checked_in[/]"
+    elif status == "skipped":
+      icon = "[yellow]– skipped[/]"
+    elif status == "would_check_in":
+      icon = "[blue]? would_check_in[/]"
+    else:
+      icon = "[red]✗ failed[/]"
+    table.add_row(r["username"], r.get("location", "—"), icon, r.get("detail", ""))
+
+  console.print(table)
+
+
+def _resolve_payload(
+  user: str,
+  default_payload: CheckInPayload,
+  locations: dict[str, Location],
+  user_locations: dict[str, str],
+  default_location: str | None,
+) -> tuple[CheckInPayload, str]:
+  """Return (payload, location_name) for a user."""
+  loc = resolve_location(user, locations, user_locations, default_location)
+  if loc:
+    return build_payload_for_location(loc, default_payload.access_token), loc.name
+  return default_payload, "default"
+
+
+def _handle_attendance_env(
+  data: CheckInPayload,
+  func: Callable,
+  headless: bool = False,
+  idempotent: bool = True,
+  dry_run: bool = False,
+  verify: bool = False,
+):
   if headless:
     throttle = env_bool("THROTTLE", default=False)
     shuffle = env_bool("SHUFFLE", default=True)
@@ -104,24 +163,75 @@ def _handle_attendance_env(data: CheckInPayload, func: Callable, headless: bool 
 
   if not usernames:
     print_log("No usernames configured in USERNAMES env var", "ERROR")
-    return False
+    return False, []
+
+  locations, user_locations, default_location = load_location_config()
 
   length = len(usernames)
   all_ok = True
+  results = []
+
   for idx, user in enumerate(usernames, 1):
+    payload, loc_name = _resolve_payload(user, data, locations, user_locations, default_location)
+
     if idempotent and _is_already_checked_in(user, data.access_token):
       print_log(f"[yellow]{user} already has an active session — skipping[/]")
       log.info("Skipped %s (already checked in)", user)
+      results.append(
+        {
+          "username": user,
+          "location": loc_name,
+          "status": "skipped",
+          "attempts": 0,
+          "detail": "already has an active session",
+        }
+      )
       continue
 
-    print(f"Checking in for {user}")
-    if not _retry_check_in(user, data):
+    if dry_run:
+      print_log(f"[blue]DRY RUN: would check in {user}@{loc_name}[/]")
+      results.append(
+        {
+          "username": user,
+          "location": loc_name,
+          "status": "would_check_in",
+          "attempts": 0,
+          "detail": "dry run — no POST sent",
+        }
+      )
+      continue
+
+    print(f"Checking in for {user}@{loc_name}")
+    ok, attempts = _retry_check_in(user, payload, return_attempts=True)
+    result = {
+      "username": user,
+      "location": loc_name,
+      "status": "checked_in" if ok else "failed",
+      "attempts": attempts,
+      "detail": "" if ok else f"failed after {attempts} attempts",
+    }
+
+    if verify:
+      session = check_active_session(user, data.access_token)
+      if session:
+        result["verified"] = True
+        result["checked_in_at"] = session["time"]
+        result["verified_location"] = session["location"]
+      else:
+        result["verified"] = False
+        result["checked_in_at"] = None
+        log.warning("Verify: %s has no active session after check-in", user)
+
+    results.append(result)
+    if not ok:
       all_ok = False
 
     if throttle and idx < length:
       time.sleep(random.uniform(0.0, 5.0))
 
-  return all_ok
+  _print_summary(results)
+  _write_result_json(results)
+  return all_ok, results
 
 
 def _handle_attendance_manual(data: CheckInPayload, func: Callable):
@@ -147,7 +257,7 @@ def _handle_attendance_manual(data: CheckInPayload, func: Callable):
     if not Confirm.ask("Input another username?", default=False):
       break
 
-  return True
+  return True, []
 
 
 def _retry_check_in(
@@ -155,7 +265,8 @@ def _retry_check_in(
   data: CheckInPayload,
   max_retries: int | None = None,
   backoff: float | None = None,
-) -> bool:
+  return_attempts: bool = False,
+) -> bool | tuple[bool, int]:
   if max_retries is None:
     max_retries = env_int("MAX_RETRIES", default=3)
   if backoff is None:
@@ -163,16 +274,22 @@ def _retry_check_in(
 
   for attempt in range(1, max_retries + 1):
     if check_in(username, data):
+      if return_attempts:
+        return True, attempt
       return True
     if attempt < max_retries:
       delay = backoff**attempt
       print_log(f"Check-in attempt {attempt}/{max_retries} failed, retrying in {delay:.1f}s...", "WARN")
       time.sleep(delay)
   print_log(f"Check-in for {username} failed after {max_retries} attempts", "ERROR")
+  if return_attempts:
+    return False, max_retries
   return False
 
 
-def handle_attendance(username: str, password: str, headless: bool = False) -> bool:
+def handle_attendance(
+  username: str, password: str, headless: bool = False, dry_run: bool = False, verify: bool = False
+) -> bool:
   try:
     latitude = float(os.getenv("KKN_LOCATION_LATITUDE", ""))
     longitude = float(os.getenv("KKN_LOCATION_LONGITUDE", ""))
@@ -219,9 +336,11 @@ def handle_attendance(username: str, password: str, headless: bool = False) -> b
     idempotent = env_bool("IDEMPOTENT", default=True)
 
   if is_manual:
-    return _handle_attendance_manual(data, func)
+    ok, _ = _handle_attendance_manual(data, func)
+    return ok
   else:
-    return _handle_attendance_env(data, func, headless=headless, idempotent=idempotent)
+    ok, _ = _handle_attendance_env(data, func, headless=headless, idempotent=idempotent, dry_run=dry_run, verify=verify)
+    return ok
 
 
 def handle_check_status(username: str, password: str) -> bool:

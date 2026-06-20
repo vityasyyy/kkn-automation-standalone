@@ -9,7 +9,7 @@ on:
 jobs:
   attendance:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +24,11 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
-      - name: Run daily attendance
+      - name: Write locations.yaml
+        if: ${{ vars.LOCATIONS_YAML != '' }}
+        run: echo "${{ vars.LOCATIONS_YAML }}" > locations.yaml
+
+      - name: Run daily attendance + reports
         env:
           SIMASTER_USERNAME: ${{ secrets.SIMASTER_USERNAME }}
           SIMASTER_PASSWORD: ${{ secrets.SIMASTER_PASSWORD }}
@@ -33,15 +37,18 @@ jobs:
           KKN_LOCATION_LATITUDE: ${{ secrets.KKN_LOCATION_LATITUDE }}
           KKN_LOCATION_LONGITUDE: ${{ secrets.KKN_LOCATION_LONGITUDE }}
           KKN_LOCATION_RADIUS_METERS: ${{ secrets.KKN_LOCATION_RADIUS_METERS }}
+          SIMASTER_CREDENTIALS: ${{ secrets.SIMASTER_CREDENTIALS }}
           AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
           OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL }}
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
           IDEMPOTENT: "true"
           THROTTLE: "true"
           SHUFFLE: "true"
           MAX_RETRIES: "3"
-        run: uv run python src/main.py -s --headless --report
+        run: uv run python src/main.py -s --headless --report --verify --group_report
 
       - name: Upload reports
         if: always()

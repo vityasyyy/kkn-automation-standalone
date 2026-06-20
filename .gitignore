@@ -17,3 +17,7 @@ logs/
 .cache/
 reports/
 !reports/.gitkeep
+
+# Location config (may contain real coords)
+locations.yaml
+!locations.example.yaml

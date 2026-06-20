@@ -1,0 +1,29 @@
+# Multi-location check-in configuration.
+# Copy this file to locations.yaml and fill in your group's KKN sites.
+#
+# Each location has a QR code value + GPS coordinates + radius (meters).
+# user_locations maps each username to a location name.
+# default_location is used for any username not listed in user_locations.
+#
+# If locations.yaml is absent, the tool falls back to the single-location
+# env vars (QR_CODE_VALUE, KKN_LOCATION_LATITUDE, KKN_LOCATION_LONGITUDE, KKN_LOCATION_RADIUS_METERS).
+
+locations:
+  desa_a:
+    qr_value: 11111
+    latitude: -7.9347226
+    longitude: 110.2788225
+    radius: 50
+
+  desa_b:
+    qr_value: 22222
+    latitude: -7.9547226
+    longitude: 110.2988225
+    radius: 50
+
+user_locations:
+  alice: desa_a
+  bob: desa_b
+  charlie: desa_a
+
+default_location: desa_a
