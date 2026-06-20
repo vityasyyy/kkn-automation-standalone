@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchd plist for daily KKN attendance.
+
+  Install:
+    1. Edit <string> paths below to match your setup.
+    2. Copy to ~/Library/LaunchAgents/com.vityasyyy.kkn-attendance.plist
+    3. Load:   launchctl load ~/Library/LaunchAgents/com.vityasyyy.kkn-attendance.plist
+    4. Unload: launchctl unload ~/Library/LaunchAgents/com.vityasyyy.kkn-attendance.plist
+
+  launchd catches up missed runs on wake (StartCalendarInterval behaviour),
+  so the job fires even if the laptop was asleep at 10:00 — it runs shortly after wake.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.vityasyyy.kkn-attendance</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOUR_USERNAME/.pyenv/shims/python3</string>
+    <string>/Users/YOUR_USERNAME/path/to/kkn-automation/src/main.py</string>
+    <string>-s</string>
+    <string>--headless</string>
+    <string>--report</string>
+  </array>
+
+  <!-- 10:00 WIB daily -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>10</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/YOUR_USERNAME/path/to/kkn-automation</string>
+
+  <!-- Load .env via the script itself (it calls load_dotenv()) -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/YOUR_USERNAME/.pyenv/shims:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/kkn-automation/logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USERNAME/path/to/kkn-automation/logs/launchd.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

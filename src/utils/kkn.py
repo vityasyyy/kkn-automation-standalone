@@ -5,7 +5,6 @@ import re
 from asyncio.tasks import Task
 
 import httpx
-import requests
 from selectolax.parser import HTMLParser
 
 from datatypes import AssistedProgram, EntryData, LogEntryPayload, RPPData, SubEntryData
@@ -28,12 +27,19 @@ MAIN_SUB_ENTRY_PATTERN = re.compile(
 ASSISTED_SUB_ENTRY_PATTERN = re.compile(r"^(?P<title>.*?)\s+\((?P<datetime>.*?WIB)\)\s+\[(?P<duration>.*?)\]")
 
 
-# TODO: refactor one day...
 class KKN:
-  def __init__(self, client: httpx.AsyncClient, simaster_acc: Simaster):
+  def __init__(self, client: httpx.AsyncClient, simaster_acc: Simaster, autostart: bool = True):
     self.client: httpx.AsyncClient = client
     self.simaster_account: Simaster = simaster_acc
-    self.loader: Task = asyncio.create_task(self._load_all(self.simaster_account))
+    self.loader: Task | None = None
+    self.main_program: dict[str, RPPData] = {}
+    self.assisted_program: dict[str, list[AssistedProgram]] = {}
+    if autostart:
+      self.start()
+
+  def start(self):
+    if self.loader is None or self.loader.done():
+      self.loader = asyncio.create_task(self._load_all(self.simaster_account))
 
   async def _load_all(self, auth_provider: Simaster | None = None):
     self.main_program: dict[str, RPPData] = await self._get_kkn_program()
@@ -390,7 +396,7 @@ class KKN:
         print_log(f"Failed to add logbook entry: {resp_json.get('msg')}", "ERROR")
         return False
 
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e:
       print_log(f"Network error occurred: {e}", "ERROR")
       return False
     except Exception as e:

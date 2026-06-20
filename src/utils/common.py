@@ -1,5 +1,6 @@
 import asyncio
 import math
+import os
 import random
 from asyncio import Task
 from typing import Callable
@@ -18,7 +19,7 @@ async def async_input(prompt: str | AnyFormattedText = "", func: type | Callable
 
 
 async def load_background(status: str, job: Task):
-  if job.done():
+  if job is None or job.done():
     return
 
   with console.status(status, spinner="dots", spinner_style="#89dceb"):
@@ -44,3 +45,28 @@ def generate_random_points(lat: float, long: float, radius_m: int) -> tuple[str,
   new_long = f"{new_long:.6f}"
 
   return (new_lat, new_long)
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+  raw = os.getenv(name)
+  if raw is None:
+    return default
+  return raw.strip().lower() in {"1", "true", "yes", "on", "y", "t"}
+
+
+def env_int(name: str, default: int) -> int:
+  try:
+    return int(os.getenv(name, str(default)))
+  except (TypeError, ValueError):
+    return default
+
+
+def env_float(name: str, default: float) -> float:
+  try:
+    return float(os.getenv(name, str(default)))
+  except (TypeError, ValueError):
+    return default
+
+
+def get_usernames() -> list[str]:
+  return [u for u in os.getenv("USERNAMES", "").split(",") if u]

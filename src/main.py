@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 
 from dotenv import load_dotenv
 from prompt_toolkit import HTML
@@ -10,6 +11,7 @@ from ui.tui import console, print_choice, print_log, print_title, prompt_session
 from utils.attendance import handle_attendance, handle_check_status
 from utils.common import async_input
 from utils.kkn import KKN
+from utils.logger import setup_logging
 from utils.simaster import Simaster
 
 CLIENT_ID = "e6abd4e380a5462e83873fe22ab8c219yVaU"
@@ -20,10 +22,14 @@ REDIRECT_URI = "id.ac.ugm.student.vnext.simaster://oauth2"
 class Parser(Tap):
   submit: bool = False  # Submit your attendance
   check: bool = False  # Check whether if you have logged in or not
+  report: bool = False  # Generate attendance report
+  headless: bool = False  # Run without interactive prompts (for cron/CI)
 
   def configure(self):
     self.add_argument("-s", "--submit")
     self.add_argument("-c", "--check")
+    self.add_argument("-r", "--report")
+    self.add_argument("--headless")
 
 
 async def main_async(username: str, password: str):
@@ -47,7 +53,7 @@ async def main_async(username: str, password: str):
 
     try:
       if choice == "1":
-        handle_attendance(username, password, "check_in")
+        handle_attendance(username, password)
       elif choice == "2":
         await actions.show_all_program(kkn_manager)
       elif choice == "3":
@@ -58,21 +64,20 @@ async def main_async(username: str, password: str):
         await actions.handle_unattended_entries(kkn_manager)
         pass
       elif choice == "6":
-        # await load_background("[blue]Background fetch in progress...[/]", kkn_manager.loader)
-        # TODO: handle report generation
-        console.print("[#181825 on #89dceb] TODO [/] Report generation")
-        pass
+        from utils.report import generate_report_interactive
+
+        await generate_report_interactive(kkn_manager)
       elif choice == "7":
         if result := await actions.change_account():
           simaster_acc, session, kkn_manager = result
           username = simaster_acc.username
           password = simaster_acc.password
       elif choice == "8":
-        kkn_manager.loader = asyncio.create_task(kkn_manager._load_all(kkn_manager.simaster_account))
+        kkn_manager.start()
         console.print("[blue]Data refresh started in background...")
       elif choice == "9":
         console.print("[yellow]Exiting...[/]")
-        if not kkn_manager.loader.done():
+        if kkn_manager.loader and not kkn_manager.loader.done():
           kkn_manager.loader.cancel()
         break
       else:
@@ -95,27 +100,52 @@ def signal_handler(_sig, _frame):
   os._exit(0)
 
 
-def main():
+def main() -> int:
   args = Parser().parse_args()
+  log = setup_logging(headless=args.headless)
 
-  print_title()
+  if not args.headless:
+    print_title()
+
   username = os.getenv("SIMASTER_USERNAME") or prompt_session.prompt(HTML('Username<delim fg="#89dceb">:</delim> '))
   password = os.getenv("SIMASTER_PASSWORD") or prompt_session.prompt(
     HTML('Password<delim fg="#89dceb">:</delim> '), is_password=True
   )
 
-  if args.submit:
-    handle_attendance(username, password, "check_in")
-  elif args.check:
-    handle_check_status(username, password)
-  else:
-    try:
+  try:
+    if args.submit:
+      ok = handle_attendance(username, password, headless=args.headless)
+      if args.report:
+        _generate_report_headless(username, password)
+      return 0 if ok else 1
+    elif args.check:
+      ok = handle_check_status(username, password)
+      return 0 if ok else 1
+    elif args.report:
+      ok = _generate_report_headless(username, password)
+      return 0 if ok else 1
+    else:
       asyncio.run(main_async(username, password))
-    except KeyboardInterrupt:
-      print()
-      print_log("Program interrupted! Exiting[#89dceb]...")
+      return 0
+  except KeyboardInterrupt:
+    print()
+    print_log("Program interrupted! Exiting[#89dceb]...")
+    return 130
+  except Exception as e:
+    log.error("Fatal error in main: %s", e, exc_info=True)
+    return 1
+
+
+def _generate_report_headless(username: str, password: str) -> bool:
+  try:
+    from utils.report import generate_report_headless
+
+    return asyncio.run(generate_report_headless(username, password))
+  except Exception as e:
+    setup_logging().error("Report generation failed: %s", e, exc_info=True)
+    return False
 
 
 if __name__ == "__main__":
   load_dotenv()
-  main()
+  sys.exit(main())

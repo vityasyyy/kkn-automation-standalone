@@ -12,7 +12,7 @@ class OAuthResponse(TypedDict, total=False):
   success: bool
   flow_completed: bool
   error: str
-  status_code: str
+  status_code: int
   response_text: str | None
 
   # IDs / Code

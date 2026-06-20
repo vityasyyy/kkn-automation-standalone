@@ -1,21 +1,31 @@
 import hashlib
+import os
 from contextlib import nullcontext
+from pathlib import Path
 
 import httpx
-from cachelib import SimpleCache
+from cachelib import FileSystemCache
 
 from ui.tui import console, print_log
 
 BASE_URL = "https://simaster.ugm.ac.id"
 HOME_URL = f"{BASE_URL}/beranda"
 LOGIN_URL = f"{BASE_URL}/services/simaster/service_login"
+CACHE_DIR = Path(os.getenv("CACHE_DIR", ".cache"))
+CACHE_THRESHOLD = int(os.getenv("CACHE_THRESHOLD", str(500)))
 
 
 class Simaster:
   def __init__(self, username: str, password: str):
     self.username = username
     self.password = password
-    self.cache: SimpleCache = SimpleCache()
+    try:
+      CACHE_DIR.mkdir(parents=True, exist_ok=True)
+      self.cache: FileSystemCache = FileSystemCache(str(CACHE_DIR), threshold=CACHE_THRESHOLD)
+    except OSError:
+      from cachelib import SimpleCache
+
+      self.cache = SimpleCache()
 
   def _get_cache_key(self, username: str, password: str):
     return hashlib.md5(f"{username}:{password}".encode()).hexdigest()

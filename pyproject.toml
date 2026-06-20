@@ -51,7 +51,7 @@
   ]
   line-length    = 120
   indent-width   = 2
-  target-version = "py314"
+  target-version = "py312"
 
   [tool.ruff.lint]
     select  = ["I", "F"]

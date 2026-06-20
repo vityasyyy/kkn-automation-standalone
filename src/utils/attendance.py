@@ -1,7 +1,7 @@
 import os
 import random
 import time
-from typing import Callable, Literal
+from typing import Callable
 
 import httpx
 import requests
@@ -11,8 +11,11 @@ from rich.table import Table
 
 from datatypes import CheckInPayload, RequestHeader
 from ui.tui import console, print_log
-from utils.common import generate_random_points
+from utils.common import env_bool, env_float, env_int, generate_random_points, get_usernames
+from utils.logger import get_logger
 from utils.oauth import OAuthClient
+
+log = get_logger("attendance")
 
 CLIENT_ID = "e6abd4e380a5462e83873fe22ab8c219yVaU"
 CLIENT_SECRET = "THFnhmQ6jckSWWzV6m9Mj78CexLCKjd009f4h9gQaIo8fUUULOhWP7DD"
@@ -44,12 +47,16 @@ def check_in(username: str, data: CheckInPayload):
       resp = client.post(full_url, params=params, headers=header)
     except Exception as e:
       print_log(f"Request Error: {e}", "ERROR")
+      log.error("Check-in request failed for %s: %s", username, e)
+      return False
 
   if resp.status_code == 200:
     print_log(f"Succesfully checked-in as [bold #89dceb]{username}[/]!", "SUCCESS")
+    log.info("Checked in successfully as %s", username)
     return True
   else:
     print_log(f"Status Code {resp.status_code}", "ERROR")
+    log.error("Check-in for %s returned status %s: %s", username, resp.status_code, resp.text[:200])
     return False
 
 
@@ -74,23 +81,47 @@ def check_active_session(username: str, access_token: str):
   return None
 
 
-def _handle_attendance_env(data: CheckInPayload, func: Callable):
-  throttle = Confirm.ask("Throttle in between check-in?", default=False)
-  shuffle = Confirm.ask("Shuffle the check-in order?", default=True)
+def _is_already_checked_in(username: str, access_token: str) -> bool:
+  """Idempotency check: skip check-in if the user has an active session today."""
+  try:
+    return check_active_session(username, access_token) is not None
+  except Exception as e:
+    log.warning("Idempotency check failed for %s: %s — proceeding with check-in", username, e)
+    return False
 
-  usernames = os.getenv("USERNAMES", "").split(",")
+
+def _handle_attendance_env(data: CheckInPayload, func: Callable, headless: bool = False, idempotent: bool = True):
+  if headless:
+    throttle = env_bool("THROTTLE", default=False)
+    shuffle = env_bool("SHUFFLE", default=True)
+  else:
+    throttle = Confirm.ask("Throttle in between check-in?", default=False)
+    shuffle = Confirm.ask("Shuffle the check-in order?", default=True)
+
+  usernames = get_usernames()
   if shuffle:
     random.shuffle(usernames)
 
-  length = len(usernames)
-  for id, user in enumerate(usernames, 1):
-    print(f"Checking in for {user}")
-    # Retry until successful, idrc
-    while not check_in(user, data):
-      pass
+  if not usernames:
+    print_log("No usernames configured in USERNAMES env var", "ERROR")
+    return False
 
-    if throttle and id < length:
+  length = len(usernames)
+  all_ok = True
+  for idx, user in enumerate(usernames, 1):
+    if idempotent and _is_already_checked_in(user, data.access_token):
+      print_log(f"[yellow]{user} already has an active session — skipping[/]")
+      log.info("Skipped %s (already checked in)", user)
+      continue
+
+    print(f"Checking in for {user}")
+    if not _retry_check_in(user, data):
+      all_ok = False
+
+    if throttle and idx < length:
       time.sleep(random.uniform(0.0, 5.0))
+
+  return all_ok
 
 
 def _handle_attendance_manual(data: CheckInPayload, func: Callable):
@@ -111,14 +142,37 @@ def _handle_attendance_manual(data: CheckInPayload, func: Callable):
       data.qr_value = int(Prompt.ask("Enter new QR code value", default=data.qr_value))
 
     username = Prompt.ask("Enter username to check in")
-    while not check_in(username, data):
-      pass
+    _retry_check_in(username, data)
 
     if not Confirm.ask("Input another username?", default=False):
       break
 
+  return True
 
-def handle_attendance(username: str, password: str, type: Literal["check_in", "check_out"] = "check_in"):
+
+def _retry_check_in(
+  username: str,
+  data: CheckInPayload,
+  max_retries: int | None = None,
+  backoff: float | None = None,
+) -> bool:
+  if max_retries is None:
+    max_retries = env_int("MAX_RETRIES", default=3)
+  if backoff is None:
+    backoff = env_float("RETRY_BACKOFF", default=2.0)
+
+  for attempt in range(1, max_retries + 1):
+    if check_in(username, data):
+      return True
+    if attempt < max_retries:
+      delay = backoff**attempt
+      print_log(f"Check-in attempt {attempt}/{max_retries} failed, retrying in {delay:.1f}s...", "WARN")
+      time.sleep(delay)
+  print_log(f"Check-in for {username} failed after {max_retries} attempts", "ERROR")
+  return False
+
+
+def handle_attendance(username: str, password: str, headless: bool = False) -> bool:
   try:
     latitude = float(os.getenv("KKN_LOCATION_LATITUDE", ""))
     longitude = float(os.getenv("KKN_LOCATION_LONGITUDE", ""))
@@ -131,20 +185,21 @@ def handle_attendance(username: str, password: str, type: Literal["check_in", "c
       "\n[#fab387]2[/][#89dceb].[white] KKN_LOCATION_LONGITUDE[/]:[/] [yellow]float[/]"
       "\n[#fab387]3[/][#89dceb].[white] QR_CODE_VALUE[/]:[/] [yellow]int[/]"
     )
-    return
+    return False
 
   oauth_client = OAuthClient(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
   login_result = oauth_client.complete_oauth_flow(username, password)
 
   if not login_result["success"]:
     print_log(f"({login_result['step']}) {login_result['error']}", "ERROR")
-    return
+    return False
 
   if not (access_token := login_result["access_token"]):
     print_log("No access token found!", "ERROR")
-    return
+    return False
 
   print_log("Successfully logged in via [#89dceb]oauth.ugm.ac.id[/]!", "SUCCESS")
+  log.info("OAuth login successful for %s", username)
 
   data = CheckInPayload(
     access_token=access_token,
@@ -154,35 +209,47 @@ def handle_attendance(username: str, password: str, type: Literal["check_in", "c
     radius=radius,
   )
 
-  func = check_in if type == "check_in" else check_out
+  func = check_in
 
-  is_manual = Confirm.ask("Do you want to input usernames manually?", default=False)
+  if headless:
+    is_manual = False
+    idempotent = env_bool("IDEMPOTENT", default=True)
+  else:
+    is_manual = Confirm.ask("Do you want to input usernames manually?", default=False)
+    idempotent = env_bool("IDEMPOTENT", default=True)
 
   if is_manual:
-    _handle_attendance_manual(data, func)
+    return _handle_attendance_manual(data, func)
   else:
-    _handle_attendance_env(data, func)
+    return _handle_attendance_env(data, func, headless=headless, idempotent=idempotent)
 
 
-def handle_check_status(username: str, password: str):
+def handle_check_status(username: str, password: str) -> bool:
   oauth_client = OAuthClient(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
   login_result = oauth_client.complete_oauth_flow(username, password)
 
   if not login_result["success"]:
     print_log(f"({login_result['step']})[/]: {login_result['error']}", "ERROR")
-    return
+    return False
 
   access_token = login_result["access_token"]
   print("Login successful!")
+  log.info("OAuth login successful for status check")
   assert type(access_token) is str
 
-  usernames = os.getenv("USERNAMES", "").split(",")
-  for username in usernames:
-    print(f"Checking status for {username}")
-    data = check_active_session(username, access_token)
+  usernames = get_usernames()
+  if not usernames:
+    print_log("No usernames configured in USERNAMES env var", "ERROR")
+    return False
+
+  for user in usernames:
+    print(f"Checking status for {user}")
+    data = check_active_session(user, access_token)
 
     if not data:
-      print(f"User {username} haven't checked-in")
+      print(f"User {user} haven't checked-in")
       continue
 
     print(f"ID: {data['id']}\nLocation: {data['location']}\nCheck-in time: {data['time']}")
+
+  return True

@@ -11,3 +11,9 @@ wheels/
 
 # Environment Variables
 .env
+
+# Runtime artifacts
+logs/
+.cache/
+reports/
+!reports/.gitkeep

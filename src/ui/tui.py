@@ -7,12 +7,12 @@ from rich.console import Console
 console = Console()
 prompt_session = PromptSession()
 
-type Level = Literal["SUCCESS", "FAILED", "ERROR", "WARN"]
+type Level = Literal["SUCCESS", "ERROR", "WARN"]
 
 PREFIX = {
-  "SUCCESS": "[bold green] SUCCESS[/][#89dceb]:[/] ",
-  "ERROR": "[bold red] ERROR[/][#89dceb]:[/] ",
-  "WARN": "[bold yellow] WARNING[/][#89dceb]:[/] ",
+  "SUCCESS": "[bold green] SUCCESS[/][#89dceb]:[/] ",
+  "ERROR": "[bold red] ERROR[/][#89dceb]:[/] ",
+  "WARN": "[bold yellow] WARNING[/][#89dceb]:[/] ",
 }
 
 
