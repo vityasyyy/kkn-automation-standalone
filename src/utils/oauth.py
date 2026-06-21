@@ -245,6 +245,14 @@ class OAuthClient:
       consent_resp = self.session.get(url, params=params, headers=self.default_headers, allow_redirects=False)
       oauth_log.info("authorize_access GET consent: status=%s", consent_resp.status_code)
 
+      # If the GET already returns a 302 redirect, the authorization code is in the Location header
+      # (server auto-approves without showing consent page — happens on some IPs/sessions)
+      if consent_resp.status_code == 302:
+        loc = consent_resp.headers.get("Location", "")
+        if code := self._extract_location_header(loc, "code"):
+          oauth_log.info("authorize_access: got code from GET 302 redirect directly")
+          return {"success": True, "status_code": 302, "authorization_code": code, "location": loc}
+
       csrf_token = None
       if consent_resp.status_code == 200:
         tree = HTMLParser(consent_resp.text)
