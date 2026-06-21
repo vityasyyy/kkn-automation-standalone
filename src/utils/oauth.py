@@ -130,7 +130,6 @@ class OAuthClient:
         "Sec-Fetch-User": "?1",
         "Sec-Fetch-Dest": "document",
         "Referer": f"{SSO_BASE_URL}/cas/login?service={OAUTH_BASE_URL}/oauth/authorize?response_type=code&client_id={self.client_id}&redirect_uri={self.redirect_uri}&scope={ALL_SCOPE}",
-        "Cookie": f"JSESSIONID={self.jsessionid}",
       }
     )
 
@@ -226,7 +225,6 @@ class OAuthClient:
         "Sec-Fetch-User": "?1",
         "Sec-Fetch-Dest": "document",
         "Referer": f"{OAUTH_BASE_URL}/oauth/authorize?response_type=code&client_id={self.client_id}&redirect_uri={self.redirect_uri}&scope={ALL_SCOPE}&ticket={self.ticket}",
-        "Cookie": f"session={self.session_cookie}",
       }
     )
 
@@ -286,26 +284,35 @@ class OAuthClient:
       return {"success": False, "error": str(e), "response_text": resp.text if "response" in locals() else None}
 
   def complete_oauth_flow(self, username: str, password: str) -> OAuthResponse:
+    import logging
+
+    log = logging.getLogger("kkn.oauth")
+
     auth_result = self.get_auth_url()
     if not auth_result["success"]:
       return {"success": False, "step": "authorization_url", "error": auth_result["error"]}
+    log.info("OAuth step 1 (auth_url): jsessionid=%s, cookies=%s", self.jsessionid, dict(self.session.cookies))
 
     login_result = self.login(username, password)
     if not login_result["success"]:
       return {"success": False, "step": "login", "error": login_result["error"]}
+    log.info("OAuth step 2 (login): ticket=%s, cookies=%s", self.ticket, dict(self.session.cookies))
 
     session_result = self.get_session_cookie()
     if not session_result["success"]:
       return {"success": False, "step": "session_cookie", "error": session_result["error"]}
+    log.info("OAuth step 3 (session_cookie): session=%s, cookies=%s", self.session_cookie, dict(self.session.cookies))
 
     auth_code_result = self.authorize_access()
     if not auth_code_result["success"]:
       return {"success": False, "step": "authorize_access", "error": auth_code_result["error"]}
+    log.info("OAuth step 4 (authorize_access): code=%s", auth_code_result.get("authorization_code"))
 
     assert type(auth_code_result["authorization_code"]) is str
     token_result = self.get_access_token(auth_code_result["authorization_code"])
     if not token_result["success"]:
       return {"success": False, "step": "access_token", "error": token_result["error"]}
+    log.info("OAuth step 5 (access_token): obtained")
 
     return {
       "success": True,
