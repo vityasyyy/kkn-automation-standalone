@@ -89,8 +89,7 @@ class OAuthClient:
       self.lt_token = self._extract_lt_value(resp.text)
 
       if self.jsessionid:
-        self.session.cookies.set("JSESSIONID", self.jsessionid, domain="sso.ugm.ac.id")
-        self.session.cookies.set("JSESSIONID", self.jsessionid, domain="oauth.simaster.ugm.ac.id")
+        self.session.cookies.set("JSESSIONID", self.jsessionid, domain="sso.ugm.ac.id", path="/")
 
       return {
         "success": True,
@@ -298,17 +297,17 @@ class OAuthClient:
     auth_result = self.get_auth_url()
     if not auth_result["success"]:
       return {"success": False, "step": "authorization_url", "error": auth_result["error"]}
-    log.info("OAuth step 1 (auth_url): jsessionid=%s, cookies=%s", self.jsessionid, dict(self.session.cookies))
+    log.info("OAuth step 1 (auth_url): jsessionid=%s", self.jsessionid)
 
     login_result = self.login(username, password)
     if not login_result["success"]:
       return {"success": False, "step": "login", "error": login_result["error"]}
-    log.info("OAuth step 2 (login): ticket=%s, cookies=%s", self.ticket, dict(self.session.cookies))
+    log.info("OAuth step 2 (login): ticket=%s", self.ticket)
 
     session_result = self.get_session_cookie()
     if not session_result["success"]:
       return {"success": False, "step": "session_cookie", "error": session_result["error"]}
-    log.info("OAuth step 3 (session_cookie): session=%s, cookies=%s", self.session_cookie, dict(self.session.cookies))
+    log.info("OAuth step 3 (session_cookie): session=%s", self.session_cookie[:20] if self.session_cookie else None)
 
     auth_code_result = self.authorize_access()
     if not auth_code_result["success"]:
