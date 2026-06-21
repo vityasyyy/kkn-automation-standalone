@@ -184,12 +184,12 @@ class OAuthClient:
     try:
       resp = self.session.get(url, params=params, headers=headers, allow_redirects=False)
 
-      if resp.status_code == 302:
+      if resp.status_code in (200, 302):
         set_cookie = resp.headers.get("Set-Cookie", "")
         self.session_cookie = self._extract_session_cookie(set_cookie)
 
         if self.session_cookie:
-          self.session.cookies.set("session", self.session_cookie, domain="oauth.simaster.ugm.ac.id")
+          self.session.cookies.set("session", self.session_cookie, domain="oauth.simaster.ugm.ac.id", path="/")
 
         return {"success": True, "status_code": resp.status_code, "session_cookie": self.session_cookie}
       else:
@@ -219,7 +219,6 @@ class OAuthClient:
       "ticket": self.ticket,
     }
 
-    data: RequestData = {"confirm": "Izinkan"}
     headers = self.default_headers.copy()
     headers.update(
       {
@@ -234,7 +233,36 @@ class OAuthClient:
       }
     )
 
+    if self.session_cookie:
+      self.session.cookies.set("session", self.session_cookie, domain="oauth.simaster.ugm.ac.id", path="/")
+
     try:
+      import logging
+
+      oauth_log = logging.getLogger("kkn.oauth")
+
+      # Step 1: GET the consent page to extract the CSRF token
+      consent_resp = self.session.get(url, params=params, headers=self.default_headers, allow_redirects=False)
+      oauth_log.info("authorize_access GET consent: status=%s", consent_resp.status_code)
+
+      csrf_token = None
+      if consent_resp.status_code == 200:
+        tree = HTMLParser(consent_resp.text)
+        if csrf_node := tree.css_first('input[name="csrf_token"]'):
+          csrf_token = csrf_node.attributes.get("value")
+          oauth_log.info("authorize_access: extracted csrf_token=%s", (csrf_token or "")[:20])
+
+      # Step 2: POST the consent with CSRF token
+      data: RequestData = {"confirm": "Izinkan"}
+      if csrf_token:
+        data["csrf_token"] = csrf_token
+
+      # Update session cookie from consent page response if present
+      if set_cookie := consent_resp.headers.get("Set-Cookie", ""):
+        if new_session := self._extract_session_cookie(set_cookie):
+          self.session_cookie = new_session
+          self.session.cookies.set("session", new_session, domain="oauth.simaster.ugm.ac.id", path="/")
+
       resp = self.session.post(url, params=params, data=data, headers=headers, allow_redirects=False)
 
       if resp.status_code == 302:
@@ -243,9 +271,7 @@ class OAuthClient:
 
         return {"success": True, "status_code": resp.status_code, "authorization_code": code, "location": loc}
       else:
-        import logging
-
-        logging.getLogger("kkn.oauth").error("authorize_access got status %s: %s", resp.status_code, resp.text[:500])
+        oauth_log.error("authorize_access POST got status %s: %s", resp.status_code, resp.text[:500])
         return {
           "success": False,
           "status_code": resp.status_code,
