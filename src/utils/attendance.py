@@ -344,17 +344,28 @@ def _retry_check_in(
 def handle_attendance(
   username: str, password: str, headless: bool = False, dry_run: bool = False, verify: bool = False
 ) -> bool:
+  # Try env-based defaults; allowed to be missing when locations.yaml provides per-user coords.
+  latitude: float | None = None
+  longitude: float | None = None
+  radius: int | None = None
+  qr_value: int | None = None
   try:
     latitude = float(os.getenv("KKN_LOCATION_LATITUDE", ""))
     longitude = float(os.getenv("KKN_LOCATION_LONGITUDE", ""))
     radius = int(os.getenv("KKN_LOCATION_RADIUS_METERS", "100"))
     qr_value = int(os.getenv("QR_CODE_VALUE", ""))
   except (TypeError, ValueError):
+    pass
+
+  has_locations_yaml = Path(os.getenv("LOCATIONS_FILE", "locations.yaml")).exists()
+
+  if (latitude is None or longitude is None or qr_value is None) and not has_locations_yaml:
     print_log(
       "Either one of the following is not set correctly in .env file:"
       "\n[#fab387]1[/][#89dceb].[white] KKN_LOCATION_LATITUDE[/]:[/] [yellow]float[/]"
       "\n[#fab387]2[/][#89dceb].[white] KKN_LOCATION_LONGITUDE[/]:[/] [yellow]float[/]"
       "\n[#fab387]3[/][#89dceb].[white] QR_CODE_VALUE[/]:[/] [yellow]int[/]"
+      "\n[yellow]…or provide a locations.yaml with per-user coordinates.[/]"
     )
     return False
 
@@ -389,10 +400,10 @@ def handle_attendance(
 
   data = CheckInPayload(
     access_token=access_token,
-    qr_value=qr_value,
-    latitude=latitude,
-    longitude=longitude,
-    radius=radius,
+    qr_value=qr_value or 0,
+    latitude=latitude or 0.0,
+    longitude=longitude or 0.0,
+    radius=radius or 100,
   )
 
   func = check_in
