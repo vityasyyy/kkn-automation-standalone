@@ -21,6 +21,11 @@ from utils.oauth import OAuthClient
 
 log = get_logger("attendance")
 
+
+class TokenExpiredError(Exception):
+  """Raised when SIMASTER returns 401 TOKEN_EXPIRED so callers can refresh and retry."""
+
+
 CLIENT_ID = "e6abd4e380a5462e83873fe22ab8c219yVaU"
 CLIENT_SECRET = "THFnhmQ6jckSWWzV6m9Mj78CexLCKjd009f4h9gQaIo8fUUULOhWP7DD"
 REDIRECT_URI = "id.ac.ugm.student.vnext.simaster://oauth2"
@@ -63,6 +68,8 @@ def check_in(username: str, data: CheckInPayload):
   else:
     print_log(f"Status Code {resp.status_code}", "ERROR")
     log.error("Check-in for %s returned status %s: %s", username, resp.status_code, resp.text[:200])
+    if resp.status_code == 401 and "TOKEN_EXPIRED" in resp.text:
+      raise TokenExpiredError(f"Token expired for {username}")
     return False
 
 
@@ -83,6 +90,9 @@ def check_active_session(username: str, access_token: str):
       "location": data["check_point_nama"],
       "time": data["check_point_log_check_in"],
     }
+
+  if resp.status_code == 401 and "TOKEN_EXPIRED" in resp.text:
+    raise TokenExpiredError(f"Token expired during active_session check for {username}")
 
   return None
 
@@ -149,6 +159,7 @@ def _handle_attendance_env(
   idempotent: bool = True,
   dry_run: bool = False,
   verify: bool = False,
+  refresh_token_fn: Callable[[], str | None] | None = None,
 ):
   if headless:
     throttle = env_bool("THROTTLE", default=False)
@@ -216,7 +227,7 @@ def _handle_attendance_env(
       continue
 
     print(f"Checking in for {user}@{loc_name}")
-    ok, attempts = _retry_check_in(user, payload, return_attempts=True)
+    ok, attempts = _retry_check_in(user, payload, return_attempts=True, refresh_token_fn=refresh_token_fn)
     result = {
       "username": user,
       "location": loc_name,
@@ -282,14 +293,39 @@ def _retry_check_in(
   max_retries: int | None = None,
   backoff: float | None = None,
   return_attempts: bool = False,
+  refresh_token_fn: Callable[[], str | None] | None = None,
 ) -> bool | tuple[bool, int]:
   if max_retries is None:
     max_retries = env_int("MAX_RETRIES", default=3)
   if backoff is None:
     backoff = env_float("RETRY_BACKOFF", default=2.0)
 
-  for attempt in range(1, max_retries + 1):
-    if check_in(username, data):
+  attempt = 1
+  while attempt <= max_retries:
+    try:
+      ok = check_in(username, data)
+    except TokenExpiredError as e:
+      log.warning("Token expired mid-run for %s: %s", username, e)
+      if refresh_token_fn is not None:
+        print_log(f"[yellow]Token expired — refreshing OAuth token for {username}...[/]")
+        new_token = refresh_token_fn()
+        if new_token:
+          data.access_token = new_token
+          log.info("OAuth token refreshed for %s; retrying same attempt", username)
+          continue
+        else:
+          print_log(f"[red]Token refresh failed for {username}[/]", "ERROR")
+          log.error("Token refresh failed for %s", username)
+      else:
+        print_log(f"[red]Token expired for {username} and no refresh available[/]", "ERROR")
+      if attempt < max_retries:
+        delay = backoff**attempt
+        print_log(f"Check-in attempt {attempt}/{max_retries} failed, retrying in {delay:.1f}s...", "WARN")
+        time.sleep(delay)
+      attempt += 1
+      continue
+
+    if ok:
       if return_attempts:
         return True, attempt
       return True
@@ -297,6 +333,8 @@ def _retry_check_in(
       delay = backoff**attempt
       print_log(f"Check-in attempt {attempt}/{max_retries} failed, retrying in {delay:.1f}s...", "WARN")
       time.sleep(delay)
+    attempt += 1
+
   print_log(f"Check-in for {username} failed after {max_retries} attempts", "ERROR")
   if return_attempts:
     return False, max_retries
@@ -334,6 +372,21 @@ def handle_attendance(
   print_log("Successfully logged in via [#89dceb]oauth.ugm.ac.id[/]!", "SUCCESS")
   log.info("OAuth login successful for %s", username)
 
+  def _refresh_token_fn() -> str | None:
+    """Re-login via OAuth when the current SIMASTER token expires mid-run."""
+    log.info("OAuth token expired — re-running full OAuth flow for %s", username)
+    try:
+      fresh_client = OAuthClient(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
+      fresh_result = fresh_client.complete_oauth_flow(username, password)
+      if fresh_result["success"] and fresh_result.get("access_token"):
+        log.info("OAuth re-login successful; new token obtained")
+        return fresh_result["access_token"]
+      log.error("OAuth re-login failed at step %s: %s", fresh_result.get("step"), fresh_result.get("error"))
+      return None
+    except Exception as e:
+      log.error("OAuth re-login raised: %s", e)
+      return None
+
   data = CheckInPayload(
     access_token=access_token,
     qr_value=qr_value,
@@ -355,7 +408,15 @@ def handle_attendance(
     ok, _ = _handle_attendance_manual(data, func)
     return ok
   else:
-    ok, _ = _handle_attendance_env(data, func, headless=headless, idempotent=idempotent, dry_run=dry_run, verify=verify)
+    ok, _ = _handle_attendance_env(
+      data,
+      func,
+      headless=headless,
+      idempotent=idempotent,
+      dry_run=dry_run,
+      verify=verify,
+      refresh_token_fn=_refresh_token_fn,
+    )
     return ok
 
 
@@ -372,6 +433,20 @@ def handle_check_status(username: str, password: str) -> bool:
   log.info("OAuth login successful for status check")
   assert type(access_token) is str
 
+  def _refresh_status_token() -> str | None:
+    log.info("OAuth token expired during status check — re-running OAuth flow for %s", username)
+    try:
+      fresh_client = OAuthClient(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
+      fresh_result = fresh_client.complete_oauth_flow(username, password)
+      if fresh_result["success"] and fresh_result.get("access_token"):
+        log.info("OAuth re-login successful; new token obtained")
+        return fresh_result["access_token"]
+      log.error("OAuth re-login failed at step %s: %s", fresh_result.get("step"), fresh_result.get("error"))
+      return None
+    except Exception as e:
+      log.error("OAuth re-login raised: %s", e)
+      return None
+
   usernames = get_usernames()
   if not usernames:
     print_log("No usernames configured in USERNAMES env var", "ERROR")
@@ -379,7 +454,19 @@ def handle_check_status(username: str, password: str) -> bool:
 
   for user in usernames:
     print(f"Checking status for {user}")
-    data = check_active_session(user, access_token)
+    current_token = access_token
+    while True:
+      try:
+        data = check_active_session(user, current_token)
+        break
+      except TokenExpiredError:
+        new_token = _refresh_status_token()
+        if not new_token:
+          print_log(f"[red]Token expired for {user} and refresh failed[/]", "ERROR")
+          data = None
+          break
+        access_token = new_token
+        current_token = new_token
 
     if not data:
       print(f"User {user} haven't checked-in")
