@@ -29,7 +29,12 @@ async def load_background(status: str, job: Task):
 def generate_random_points(lat: float, long: float, radius_m: int) -> tuple[str, str]:
   earth_radius = 6378137.0  # (WGS84 spheroid)
 
-  random_dist = math.sqrt(random.random()) * radius_m
+  # Cap jitter at 10m so the generated point stays within the SIMASTER
+  # checkpoint's server-side validation radius, regardless of the configured
+  # `radius` (which is the spread, not the checkpoint's allowed area).
+  jitter_radius = min(radius_m, 10)
+
+  random_dist = math.sqrt(random.random()) * jitter_radius
   random_angle = 2 * math.pi * random.random()
 
   delta_lat_rad = (random_dist / earth_radius) * math.sin(random_angle)
