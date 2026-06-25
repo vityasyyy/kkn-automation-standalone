@@ -12,7 +12,7 @@ from rich import box
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from datatypes import CheckInPayload, RequestHeader
+from datatypes import CheckInPayload, OAuthResponse, RequestHeader
 from ui.tui import console, print_log
 from utils.common import env_bool, env_float, env_int, generate_random_points, get_usernames
 from utils.locations import Location, build_payload_for_location, load_location_config, resolve_location
@@ -32,6 +32,48 @@ REDIRECT_URI = "id.ac.ugm.student.vnext.simaster://oauth2"
 BASE_URL = "https://api.simaster.ugm.ac.id/vnext/v1/checkpoint"
 
 RESULT_FILE = Path(os.getenv("REPORT_DIR", "reports")) / "result.json"
+
+
+def _complete_oauth_flow_with_retry(
+  username: str, password: str, max_retries: int | None = None, backoff: float | None = None
+) -> OAuthResponse:
+  """Run complete_oauth_flow with bounded retries on transient network errors.
+
+  Builds a fresh OAuthClient per attempt so stale JSESSIONID/session state from a
+  failed attempt can't poison the retry. Returns the OAuthResponse dict from the
+  first successful attempt, or the last failure dict after exhausting retries.
+  """
+  if max_retries is None:
+    max_retries = env_int("OAUTH_MAX_RETRIES", default=3)
+  if backoff is None:
+    backoff = env_float("OAUTH_RETRY_BACKOFF", default=2.0)
+
+  last_result: OAuthResponse = {"success": False, "step": "init", "error": "no attempt made"}
+  for attempt in range(1, max_retries + 1):
+    client = OAuthClient(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
+    try:
+      result = client.complete_oauth_flow(username, password)
+    except requests.exceptions.RequestError as e:
+      result = {"success": False, "step": "exception", "error": repr(e)}
+    except Exception as e:
+      result = {"success": False, "step": "exception", "error": repr(e)}
+
+    if result.get("success"):
+      if attempt > 1:
+        log.info("OAuth flow succeeded on attempt %d/%d", attempt, max_retries)
+      return result
+
+    last_result = result
+    step = result.get("step", "?")
+    err = result.get("error", "")
+    if attempt < max_retries:
+      delay = backoff ** attempt
+      log.warning("OAuth attempt %d/%d failed at step=%s: %s — retrying in %.1fs", attempt, max_retries, step, err, delay)
+      time.sleep(delay)
+    else:
+      log.error("OAuth flow failed after %d attempts at step=%s: %s", max_retries, step, err)
+
+  return last_result
 
 
 def check_in(username: str, data: CheckInPayload):
@@ -420,8 +462,7 @@ def handle_attendance(
     )
     return False
 
-  oauth_client = OAuthClient(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
-  login_result = oauth_client.complete_oauth_flow(username, password)
+  login_result = _complete_oauth_flow_with_retry(username, password)
 
   if not login_result["success"]:
     print_log(f"({login_result['step']}) {login_result['error']}", "ERROR")
@@ -438,8 +479,7 @@ def handle_attendance(
     """Re-login via OAuth when the current SIMASTER token expires mid-run."""
     log.info("OAuth token expired — re-running full OAuth flow for %s", username)
     try:
-      fresh_client = OAuthClient(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
-      fresh_result = fresh_client.complete_oauth_flow(username, password)
+      fresh_result = _complete_oauth_flow_with_retry(username, password)
       if fresh_result["success"] and fresh_result.get("access_token"):
         log.info("OAuth re-login successful; new token obtained")
         return fresh_result["access_token"]
@@ -483,8 +523,7 @@ def handle_attendance(
 
 
 def handle_check_status(username: str, password: str) -> bool:
-  oauth_client = OAuthClient(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
-  login_result = oauth_client.complete_oauth_flow(username, password)
+  login_result = _complete_oauth_flow_with_retry(username, password)
 
   if not login_result["success"]:
     print_log(f"({login_result['step']})[/]: {login_result['error']}", "ERROR")
@@ -498,8 +537,7 @@ def handle_check_status(username: str, password: str) -> bool:
   def _refresh_status_token() -> str | None:
     log.info("OAuth token expired during status check — re-running OAuth flow for %s", username)
     try:
-      fresh_client = OAuthClient(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
-      fresh_result = fresh_client.complete_oauth_flow(username, password)
+      fresh_result = _complete_oauth_flow_with_retry(username, password)
       if fresh_result["success"] and fresh_result.get("access_token"):
         log.info("OAuth re-login successful; new token obtained")
         return fresh_result["access_token"]

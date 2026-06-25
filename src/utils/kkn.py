@@ -34,6 +34,7 @@ class KKN:
     self.loader: Task | None = None
     self.main_program: dict[str, RPPData] = {}
     self.assisted_program: dict[str, list[AssistedProgram]] = {}
+    self.load_error: str | None = None
     if autostart:
       self.start()
 
@@ -42,7 +43,15 @@ class KKN:
       self.loader = asyncio.create_task(self._load_all(self.simaster_account))
 
   async def _load_all(self, auth_provider: Simaster | None = None):
-    self.main_program: dict[str, RPPData] = await self._get_kkn_program()
+    result = await self._get_kkn_program()
+    if result is None:
+      self.main_program = {}
+      self.assisted_program = {}
+      self.load_error = "failed to load KKN program (network/parse error)"
+      return
+
+    self.main_program = result
+    self.load_error = None
     p_id = next(iter(self.main_program)) if self.main_program else ""
     pool_size = len(self.main_program) + 1
 

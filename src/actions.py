@@ -12,9 +12,9 @@ from utils.kkn import KKN
 from utils.simaster import Simaster
 
 
-def _filter_unattended_program(data: dict | None) -> list[dict]:
+def _filter_unattended_program(data: dict | None, source: str = "assisted") -> list[dict]:
   if not data:
-    print_log("No assisted program found", "ERROR")
+    print_log(f"No {source} program found", "ERROR")
     return []
 
   filtered_program = []
@@ -103,8 +103,8 @@ async def handle_unattended_entries(kkn: KKN):
 
   await load_background("[blue]Background fetch in progress...[/]", kkn.loader)
 
-  unattended_main = _filter_unattended_program(kkn.main_program)
-  unattended_assisted = _filter_unattended_program(kkn.assisted_program)
+  unattended_main = _filter_unattended_program(kkn.main_program, source="main")
+  unattended_assisted = _filter_unattended_program(kkn.assisted_program, source="assisted")
   unattended = [*unattended_main, *unattended_assisted]
 
   if not unattended:

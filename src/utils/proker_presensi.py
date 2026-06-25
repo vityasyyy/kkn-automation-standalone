@@ -63,6 +63,10 @@ def _print_summary(results: list[dict]):
       icon = "[green]✓ ok[/]"
     elif status == "skipped":
       icon = "[yellow]– skipped[/]"
+    elif status == "no_programs":
+      icon = "[yellow]– no_programs[/]"
+    elif status == "load_failed":
+      icon = "[red]✗ load_failed[/]"
     elif status == "login_failed":
       icon = "[red]✗ login_failed[/]"
     else:
@@ -128,11 +132,27 @@ async def _process_single_user(
     if kkn.loader:
       await kkn.loader
 
+    # Classify program load outcome — distinguishes a genuine failure from
+    # "user has 0 programs registered" and "all sub-entries already attended".
+    if kkn.load_error:
+      result["status"] = "load_failed"
+      result["errors"].append(kkn.load_error)
+      log.error("Program load failed for %s: %s — skipping proker presensi", username, kkn.load_error)
+      await session.aclose()
+      return result
+
+    if not kkn.main_program and not kkn.assisted_program:
+      result["status"] = "no_programs"
+      result["errors"].append("no KKN programs found for this user")
+      log.warning("No KKN programs for %s — marking no_programs", username)
+      await session.aclose()
+      return result
+
     # Find unattended sub-entries from both main and assisted programs
     from actions import _filter_unattended_program
 
-    unattended_main = _filter_unattended_program(kkn.main_program)
-    unattended_assisted = _filter_unattended_program(kkn.assisted_program)
+    unattended_main = _filter_unattended_program(kkn.main_program, source="main")
+    unattended_assisted = _filter_unattended_program(kkn.assisted_program, source="assisted")
     unattended = [*unattended_main, *unattended_assisted]
 
     result["unattended_count"] = len(unattended)
@@ -221,10 +241,32 @@ async def handle_proker_presensi(dry_run: bool = False, throttle: bool = True) -
   _print_summary(results)
   _write_result_json(results)
 
-  all_ok = all(r["status"] == "ok" for r in results)
   ok_count = sum(1 for r in results if r["status"] == "ok")
-  print_log(
-    f"Proker presensi done: {ok_count}/{len(results)} users OK",
-    "SUCCESS" if all_ok else "WARN",
-  )
+  load_failed_count = sum(1 for r in results if r["status"] == "load_failed")
+  no_programs_count = sum(1 for r in results if r["status"] == "no_programs")
+  login_failed_count = sum(1 for r in results if r["status"] == "login_failed")
+
+  # load_failed and login_failed are hard failures — they should fail the run.
+  # no_programs is a soft skip (user genuinely has no programs), not a failure.
+  hard_failures = load_failed_count + login_failed_count
+  all_ok = hard_failures == 0 and (ok_count + no_programs_count) == len(results)
+
+  if hard_failures:
+    level = "ERROR"
+    msg = (
+      f"Proker presensi done: {ok_count}/{len(results)} OK, "
+      f"{load_failed_count} load_failed, {login_failed_count} login_failed, "
+      f"{no_programs_count} no_programs"
+    )
+  elif no_programs_count:
+    level = "WARN"
+    msg = (
+      f"Proker presensi done: {ok_count}/{len(results)} OK, "
+      f"{no_programs_count} no_programs (soft skip)"
+    )
+  else:
+    level = "SUCCESS"
+    msg = f"Proker presensi done: {ok_count}/{len(results)} users OK"
+
+  print_log(msg, level)
   return all_ok

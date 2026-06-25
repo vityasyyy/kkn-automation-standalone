@@ -1,3 +1,4 @@
+import os
 import re
 from urllib.parse import parse_qs, urlparse
 
@@ -9,6 +10,8 @@ from datatypes import OAuthResponse, RequestData, RequestHeader, RequestParam
 OAUTH_BASE_URL = "https://oauth.simaster.ugm.ac.id"
 SSO_BASE_URL = "https://sso.ugm.ac.id"
 ALL_SCOPE = "user.read user.read-write-update userDetail.read alumni.read student pegawai.all.read pegawai.unit.read staff tte notif.create-read ldap parent.read parent.read-write-update mygate.read-write vehicle.read transgama.read"
+
+DEFAULT_TIMEOUT = float(os.getenv("OAUTH_TIMEOUT", "30"))
 
 
 class OAuthClient:
@@ -82,7 +85,7 @@ class OAuthClient:
     )
 
     try:
-      resp = self.session.get(url, params=params, headers=headers)
+      resp = self.session.get(url, params=params, headers=headers, timeout=DEFAULT_TIMEOUT)
       resp.raise_for_status()
 
       self.jsessionid = self._extract_jsession(resp.headers.get("Set-Cookie", ""))
@@ -137,7 +140,7 @@ class OAuthClient:
     )
 
     try:
-      resp = self.session.post(url, params=params, data=data, headers=headers, allow_redirects=False)
+      resp = self.session.post(url, params=params, data=data, headers=headers, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
 
       if resp.status_code == 302:
         loc = resp.headers.get("Location", "")
@@ -182,7 +185,7 @@ class OAuthClient:
     )
 
     try:
-      resp = self.session.get(url, params=params, headers=headers, allow_redirects=False)
+      resp = self.session.get(url, params=params, headers=headers, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
 
       if resp.status_code in (200, 302):
         set_cookie = resp.headers.get("Set-Cookie", "")
@@ -242,7 +245,7 @@ class OAuthClient:
       oauth_log = logging.getLogger("kkn.oauth")
 
       # Step 1: GET the consent page to extract the CSRF token
-      consent_resp = self.session.get(url, params=params, headers=self.default_headers, allow_redirects=False)
+      consent_resp = self.session.get(url, params=params, headers=self.default_headers, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
       oauth_log.info("authorize_access GET consent: status=%s", consent_resp.status_code)
 
       # If the GET already returns a 302 redirect, the authorization code is in the Location header
@@ -271,7 +274,7 @@ class OAuthClient:
           self.session_cookie = new_session
           self.session.cookies.set("session", new_session, domain="oauth.simaster.ugm.ac.id", path="/")
 
-      resp = self.session.post(url, params=params, data=data, headers=headers, allow_redirects=False)
+      resp = self.session.post(url, params=params, data=data, headers=headers, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
 
       if resp.status_code == 302:
         loc = resp.headers.get("Location", "")
@@ -307,7 +310,7 @@ class OAuthClient:
     }
 
     try:
-      resp = self.session.post(url, data=data, headers=headers, allow_redirects=False)
+      resp = self.session.post(url, data=data, headers=headers, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
       resp.raise_for_status()
 
       token_data = resp.json()
